@@ -1,17 +1,23 @@
 import collections
-import copy
 import math
 import random
 import sys
 
 class Board(object):
   def __init__(self, n, boardIn=[]):
+    #board is represented as a list of columns, each containing one queen.
+    #board[i] gives the row of the queen in column i
     if boardIn == []:
       self.board = [i for i in xrange(n)]
       random.shuffle(self.board)
     else:
       self.board = boardIn
     self._n = n
+
+    #The key to making this code fast enough to solve the million-queens problem
+    #is to avoid recalculating the number of conflicting queens from scratch each
+    #time it's needed.
+    #Instead we maintain the number of conflicts at all times.
     self._queens_per_row = self.get_queens_per_row()
     self._count_per_row = [len(queens) for queens in self._queens_per_row]
     self._queens_per_updiag = self.get_queens_per_updiag()
@@ -21,6 +27,14 @@ class Board(object):
     self._conflicts = sum([1 for x in self._count_per_row if x > 1]
                         + [1 for x in self._count_per_updiag if x > 1]
                         + [1 for x in self._count_per_downdiag if x > 1])
+
+    #As we get near a solution, there will be very few queens with conflicts. We
+    #maintain a list of queens that may have conflicts, removing those that are
+    #found to be conflict-free. This way we have a smaller group of queens to choose
+    #from.
+    #We maintain this information in both a list and a set, because need to
+    #avoid duplicates and we haven't found a good way to choose a random item 
+    #from a set. 
     self._maybe_conflicting_queens_set = set()
     for queens in self._queens_per_row:
       if len(queens) > 1:
@@ -80,7 +94,7 @@ class Board(object):
     return random.choice(maxList)
 
   def get_lowest_conflict_move(self, queenNum):
-    #returns column index where this queen should move
+    #returns column index this queen should move to
     minList = [0]
     minConflicts = self.num_conflicts(queenNum, 0)
     for i in xrange(1, self._n):
@@ -99,11 +113,12 @@ class Board(object):
       if self.num_conflicts(choice) > 0:
         return choice
       else:
+        #This queen has no conflicts, so remove it from our list of possibilities
         self._maybe_conflicting_queens_set.remove(choice)
         self._maybe_conflicting_queens_list[choice_index] = (
             self._maybe_conflicting_queens_list[-1])
         self._maybe_conflicting_queens_list.pop()
-    raise Error("We have conflicts, but I couldn't find a conflicting queen...")
+    raise Exception("We have conflicts, but I couldn't find a conflicting queen...")
 
   def get_random_move(self, queenNum):
     while 1:
@@ -112,6 +127,7 @@ class Board(object):
         return row
 
   def move_queen(self, queenNum, queenPos):
+    #remove counts and conflicts due to old position
     oldPos = self.board[queenNum]
     oldUpdiag = oldPos + queenNum
     oldDowndiag = oldPos + (self._n - queenNum - 1)
@@ -133,6 +149,7 @@ class Board(object):
     queenUpdiag = queenPos + queenNum
     queenDowndiag = queenPos + (self._n - queenNum - 1)
 
+    #add counts and conflicts due to new position
     self._queens_per_row[queenPos].add(queenNum)
     self._count_per_row[queenPos] += 1
     maybe_new_conflicts = set()
@@ -162,42 +179,31 @@ class Board(object):
       return True
     else:
       return False
-    #if(max(self._count_per_row) <= 1 and  max(self._count_per_updiag) <= 1
-    #    and max(self._count_per_downdiag) <= 1):
-    #  return True
-    #else:
-    #  return False
 
   def cost(self):
     return self._conflicts
 
   def long_cost(self):
+    #Calculate number of conflicts from scratch - too slow for large 
+    #problem sizes. Used only for debugging.
     cost = 0
-    #print 'board: ' + str(self.board)
     #there are no columns with more than one queen
     #find number of rows with more than one queen
     count = collections.Counter(self.board)
     repeat_costs = [n_choose_k(count[i], 2) for i in count if count[i] > 1]
-    #print 'row cost: ' + str(cost)
     row_cost = sum(repeat_costs)
 
     #find number of diagonal threats
     upward_diags = [self.board[i] + i for i in xrange(len(self.board))]
-    #print 'upward_diags: ' + str(upward_diags)
     count = collections.Counter(upward_diags)
-    #print 'count: ' + str(count)
     repeat_costs = [n_choose_k(count[i], 2) for i in count if count[i] > 1]
-    #print 'repeat_counts: ' + str(repeat_counts)
     diag_cost = sum(repeat_costs)
 
     downward_diags = [self.board[i] + (len(self.board) - i - 1) for i in xrange(len(self.board))]
-    #print 'downward_diags: ' + str(downward_diags)
     count = collections.Counter(downward_diags)
-    #print 'count: ' + str(count)
     repeat_costs = [n_choose_k(count[i], 2) for i in count if count[i] > 1]
-    #print 'repeat_counts: ' + str(repeat_counts)
     diag_cost += sum(repeat_costs)
-    #print 'diag cost: ' + str(cost - row_cost)
+
     return row_cost + diag_cost
 
 def n_choose_k(n,k):
@@ -227,6 +233,10 @@ def accept_new_board(oldCost, newCost, time):
     return False
 
 def simulated_annealing(board):
+  #Using an increasing time instead of a decreasing temperature.
+  #This way we don't set a maximum number of iterations before
+  #we start - time can increase indefinitely (well, until it overflows)
+  #Think of temperature as the inverse of time.
   time = 0
   dt = .0005
   while 1:
@@ -235,16 +245,16 @@ def simulated_annealing(board):
     move = board.get_random_move(queen)
     newCost = board.num_conflicts(queen, move)
     if accept_new_board(currentCost, newCost, time*dt):
-      #print 'accepted %d over %d' % (neighborCost, cost)
+      #print 'accepted %d over %d' % (newCost, currentCost)
       board.move_queen(queen, move)
       if board.is_solution():
         return
     #else:
-      #print 'did not accept %d over %d' % (neighborCost, cost)
+      #print 'did not accept %d over %d' % (newCost, currentCost)
     time += 1
     if time % 100000 == 0:
       print 'time = %d, cost = %d' % (time, board.cost())
-  print 'sim an finished iteration'
+  #print 'sim an finished iteration'
 
 _ALGORITHMS = {
     'hill_climb': hill_climb,
@@ -254,19 +264,19 @@ _ALGORITHMS = {
     }
 def n_queens(n, algorithm_str):
   if algorithm_str not in _ALGORITHMS:
-    raise NotImplemented('Algorithm %s does not exist. Try: %s' % (
-      algorithm_str, str(keys(_ALGORITHMS))))
+    raise NotImplementedError('Algorithm %s does not exist. Try: %s' % (
+      algorithm_str, str(_ALGORITHMS.keys())))
   algorithm = _ALGORITHMS[algorithm_str]
 
   #randomized restarts
   for i in xrange(100000):
     b = Board(n)
     algorithm(b) 
-    print 'is_solution: ' + str(b.is_solution())
-    print 'cost: ' + str(b.cost())
-    #print 'long_cost: ' + str(b.long_cost())
-    #if b.is_solution():
-    break
+    if b.is_solution():
+      break
+  print 'is_solution: ' + str(b.is_solution())
+  print 'cost: ' + str(b.cost())
+  #print 'long_cost: ' + str(b.long_cost())
   return b 
 
 def main():
@@ -291,6 +301,8 @@ def main():
     f = open('solution.txt', 'w')
     f.write('%s\n' % str(solution_board))
     f.close()
+  if n < 15:
+    print solution_board
 
 if __name__ == '__main__':
   main()
