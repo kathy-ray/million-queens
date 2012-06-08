@@ -118,7 +118,7 @@ class Board(object):
         self._maybe_conflicting_queens_list[choice_index] = (
             self._maybe_conflicting_queens_list[-1])
         self._maybe_conflicting_queens_list.pop()
-    raise Exception("We have conflicts, but I couldn't find a conflicting queen...")
+    raise Exception("We have %d conflicts, but I couldn't find a conflicting queen..." % self._conflicts)
 
   def get_random_move(self, queenNum):
     while 1:
@@ -222,7 +222,7 @@ def hill_climb(board):
     steps += 1
     if steps % 10 == 0:
       print 'steps so far: %d' % steps
-  print 'steps: %d' % steps
+  #print 'steps: %d' % steps
 
 def accept_new_board(oldCost, newCost, time):
   if newCost < oldCost:
@@ -271,6 +271,10 @@ def n_queens(n, algorithm_str):
   #randomized restarts
   for i in xrange(100000):
     b = Board(n)
+    #just in case we happened to get a board with 0 conflicts
+    #(that's cheating)
+    while b.is_solution():
+      b = Board(n)
     algorithm(b) 
     if b.is_solution():
       break
