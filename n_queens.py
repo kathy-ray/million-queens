@@ -1,3 +1,7 @@
+# This code solves the n-queens problem up to sizes of roughly 1000000 using
+# simulated annealing.
+# Copyright 2012 Kathy Ray and Omer Bar-or.
+
 import collections
 import math
 import random
